@@ -316,3 +316,8 @@ textarea { resize: vertical; min-height: 92px; }
   .output-area { height: 240px; }
   .output-area.large { height: 420px; }
 }
+
+.tool-grid{display:grid;gap:12px;grid-template-columns:repeat(3,minmax(0,1fr));}
+.compact-note{margin-top:-4px;}
+button:disabled{opacity:.58;cursor:not-allowed;filter:saturate(.7);}
+@media (max-width: 900px){.tool-grid{grid-template-columns:1fr;}}

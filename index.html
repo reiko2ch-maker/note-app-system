@@ -21,15 +21,15 @@
           <section class="hero-panel glass-panel">
             <h1>Note Forge X</h1>
             <p class="hero-copy">
-              リサーチ、構成設計、長文執筆、履歴管理をひとつに集約した、
-              note制作のための戦略執筆ワークスペース。
+              売れる切り口の整理から、構成設計、長文執筆、履歴管理まで。
+              note制作を一貫して進めるための戦略ワークスペースです。
             </p>
           </section>
 
           <section class="login-panel glass-panel">
             <div class="panel-header">
-              <h2>ワークスペース起動</h2>
-              <p>8桁の数字で識別します。これは認証というより、執筆資産の識別キーです。</p>
+              <h2>ワークスペースを開始</h2>
+              <p>8桁のコードで、この端末内の作業履歴を分けて使えます。</p>
             </div>
 
             <form id="loginForm" class="stack-lg">
@@ -58,7 +58,7 @@
             <div class="note-box">
               <strong>重要</strong>
               <p>
-                APIキーは保存しません。履歴はこの端末・このブラウザにだけ残ります。Safariの履歴削除やブラウザデータ削除をすると消えます。
+                APIキーはこのセッション内だけで使われます。履歴はこの端末・このブラウザ内に保存され、ブラウザデータ削除時には消えることがあります。
               </p>
             </div>
           </section>
@@ -218,6 +218,13 @@
                 <button class="primary-btn" id="generateArticleBtn">全文生成</button>
               </div>
 
+              <div class="tool-grid">
+                <label class="pill-check"><input type="checkbox" id="performanceMode" checked />安定優先モード</label>
+                <label class="pill-check"><input type="checkbox" id="autoRetry" checked />自動再試行</label>
+                <label class="pill-check"><input type="checkbox" id="webGrounding" />最新Web参照を使う（重め）</label>
+              </div>
+              <p class="muted small compact-note">通常は「安定優先モード」をONのまま使うのがおすすめです。混雑時は自動再試行し、最新Web参照は必要な時だけ使う設計にしています。</p>
+
               <div class="progress-box hidden" id="progressBox">
                 <div class="progress-label" id="progressLabel">待機中</div>
                 <div class="progress-bar"><span id="progressFill"></span></div>
@@ -238,10 +245,10 @@
               </div>
 
               <div class="tabs" role="tablist">
-                <button class="tab-btn active" data-tab="research">Research</button>
-                <button class="tab-btn" data-tab="outline">Outline</button>
-                <button class="tab-btn" data-tab="hooks">Hooks</button>
-                <button class="tab-btn" data-tab="article">Article</button>
+                <button class="tab-btn active" data-tab="research">リサーチ</button>
+                <button class="tab-btn" data-tab="outline">構成</button>
+                <button class="tab-btn" data-tab="hooks">導入・CTA</button>
+                <button class="tab-btn" data-tab="article">本文</button>
               </div>
 
               <div class="tab-panels">

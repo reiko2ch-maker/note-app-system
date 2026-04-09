@@ -1,11 +1,13 @@
 const STORAGE_PREFIX = "noteforgex::vault::";
 const SESSION_PROVIDER_KEY = "noteforgex::providerSettings";
-const APP_VERSION = "static-1.0.0";
+const APP_VERSION = "static-1.1.0-light";
+const requestCache = new Map();
 
 const state = {
   passcode: "",
   projectId: null,
   providerSettings: loadSessionProvider(),
+  isGenerating: false,
 };
 
 const els = {
@@ -39,6 +41,9 @@ const els = {
   buildOutlineBtn: document.getElementById("buildOutlineBtn"),
   generateHooksBtn: document.getElementById("generateHooksBtn"),
   generateArticleBtn: document.getElementById("generateArticleBtn"),
+  performanceMode: document.getElementById("performanceMode"),
+  autoRetry: document.getElementById("autoRetry"),
+  webGrounding: document.getElementById("webGrounding"),
   researchOutput: document.getElementById("researchOutput"),
   outlineOutput: document.getElementById("outlineOutput"),
   hooksOutput: document.getElementById("hooksOutput"),
@@ -294,6 +299,9 @@ function loadProject(id) {
   formFields.framework.value = project.framework || "PASONA + ストーリー";
   formFields.uniqueness.value = project.uniqueness || "";
   formFields.researchSeed.value = project.researchSeed || "";
+  els.performanceMode.checked = project.performanceMode !== false;
+  els.autoRetry.checked = project.autoRetry !== false;
+  els.webGrounding.checked = Boolean(project.webGrounding);
 
   document.querySelectorAll(".psychTrigger").forEach((checkbox) => {
     checkbox.checked = (project.psychTriggers || []).includes(checkbox.value);
@@ -312,6 +320,9 @@ function clearProjectForm() {
   formFields.targetLength.value = "10000";
   formFields.tone.value = "AI感を徹底排除した自然文";
   formFields.framework.value = "PASONA + ストーリー";
+  els.performanceMode.checked = true;
+  els.autoRetry.checked = true;
+  els.webGrounding.checked = false;
   document.querySelectorAll(".psychTrigger").forEach((checkbox) => {
     checkbox.checked = ["緊急性", "損失回避", "共感", "再現性", "購入不安の除去"].includes(checkbox.value);
   });
@@ -333,6 +344,9 @@ function collectProjectFromForm() {
     framework: formFields.framework.value,
     uniqueness: formFields.uniqueness.value.trim(),
     researchSeed: formFields.researchSeed.value.trim(),
+    performanceMode: els.performanceMode.checked,
+    autoRetry: els.autoRetry.checked,
+    webGrounding: els.webGrounding.checked,
     psychTriggers: Array.from(document.querySelectorAll(".psychTrigger:checked")).map((item) => item.value),
   };
 }
@@ -431,7 +445,10 @@ async function runResearch() {
     stage: "売れ筋リサーチ中",
     progress: 22,
     prompt,
-    grounding: true,
+    grounding: Boolean(project.webGrounding),
+    mode: "research",
+    project,
+    retryLabel: project.webGrounding ? "混雑時は軽量リサーチへ自動切替" : "軽量リサーチを実行中",
   });
   if (!result) return;
   els.researchOutput.value = result;
@@ -448,6 +465,8 @@ async function buildOutline() {
     progress: 48,
     prompt,
     grounding: false,
+    mode: "outline",
+    project,
   });
   if (!result) return;
   els.outlineOutput.value = result;
@@ -464,6 +483,8 @@ async function generateHooks() {
     progress: 66,
     prompt,
     grounding: false,
+    mode: "hooks",
+    project,
   });
   if (!result) return;
   els.hooksOutput.value = result;
@@ -476,40 +497,59 @@ async function generateArticle() {
   if (!project) return;
 
   const totalLength = project.targetLength || 10000;
-  const chunks = totalLength >= 30000 ? 4 : totalLength >= 20000 ? 3 : 2;
+  const chunks = getChunkCount(totalLength, project.performanceMode);
   const chunkTarget = Math.round(totalLength / chunks);
   const sections = [];
+  els.articleOutput.value = "";
+  activateTab("article");
+  setBusy(true);
   showProgress("全文生成を開始", 8);
 
-  for (let index = 0; index < chunks; index += 1) {
-    const percent = 18 + Math.round((index / chunks) * 68);
-    showProgress(`${index + 1}/${chunks} セクション生成中`, percent);
-    const prompt = buildArticlePrompt({
-      project,
-      research: els.researchOutput.value,
-      outline: els.outlineOutput.value,
-      hooks: els.hooksOutput.value,
-      chunkIndex: index,
-      chunks,
-      chunkTarget,
-      previousSections: sections.join("\n\n"),
-    });
-    const result = await callProvider(prompt, false);
-    sections.push(result);
-  }
+  try {
+    for (let index = 0; index < chunks; index += 1) {
+      const percent = 18 + Math.round(((index + 1) / chunks) * 60);
+      showProgress(`${index + 1}/${chunks} セクション生成中`, percent);
+      const prompt = buildArticlePrompt({
+        project,
+        research: els.researchOutput.value,
+        outline: els.outlineOutput.value,
+        hooks: els.hooksOutput.value,
+        chunkIndex: index,
+        chunks,
+        chunkTarget,
+        previousSections: sections.join("\n\n"),
+      });
 
-  showProgress("全体整形中", 94);
-  const stitched = sections.join("\n\n");
-  els.articleOutput.value = stitched;
-  saveOutputs({ article: stitched });
-  finishProgress("全文生成が完了しました");
-  activateTab("article");
+      const result = await callProvider(prompt, false, { mode: "article", project });
+      sections.push(result);
+      els.articleOutput.value = sections.join("\n\n");
+      if (index < chunks - 1) await sleep(project.performanceMode ? 650 : 250);
+    }
+
+    showProgress("全体整形中", 94);
+    const stitched = sections.join("\n\n");
+    els.articleOutput.value = stitched;
+    saveOutputs({ article: stitched });
+    finishProgress("全文生成が完了しました");
+  } catch (error) {
+    console.error(error);
+    finishProgress("全文生成で停止しました", true);
+    showToast(error.message || "全文生成に失敗しました", true);
+  } finally {
+    setBusy(false);
+  }
 }
 
-async function guardedGeneration({ stage, progress, prompt, grounding }) {
+async function guardedGeneration({ stage, progress, prompt, grounding, mode, project, retryLabel }) {
+  if (state.isGenerating) {
+    showToast("別の生成処理が進行中です。完了後に再実行してください", true);
+    return null;
+  }
+
+  setBusy(true);
   try {
     showProgress(stage, progress);
-    const result = await callProvider(prompt, grounding);
+    const result = await callProvider(prompt, grounding, { mode, project, retryLabel });
     finishProgress(`${stage} 完了`);
     return result;
   } catch (error) {
@@ -517,77 +557,184 @@ async function guardedGeneration({ stage, progress, prompt, grounding }) {
     finishProgress("エラーが発生しました", true);
     showToast(error.message || "生成に失敗しました", true);
     return null;
+  } finally {
+    setBusy(false);
   }
 }
 
-async function callProvider(prompt, grounding = false) {
+async function callProvider(prompt, grounding = false, options = {}) {
   const settings = state.providerSettings;
+  const cacheKey = buildRequestCacheKey(settings, prompt, grounding, options.mode);
+  if (requestCache.has(cacheKey)) return requestCache.get(cacheKey);
+
+  let result;
   if (settings.provider === "gemini") {
     if (!settings.geminiApiKey) {
       throw new Error("先にAPI設定でGeminiキーを入力してください");
     }
-    return callGemini(settings.geminiApiKey, settings.geminiModel, prompt, grounding);
+    result = await callGemini(settings.geminiApiKey, settings.geminiModel, prompt, grounding, options);
+  } else {
+    if (!settings.compatEndpoint || !settings.compatApiKey) {
+      throw new Error("互換エンドポイントURLとAPIキーを入力してください");
+    }
+    result = await callCompatibleEndpoint(settings, prompt, options);
   }
 
-  if (!settings.compatEndpoint || !settings.compatApiKey) {
-    throw new Error("互換エンドポイントURLとAPIキーを入力してください");
-  }
-  return callCompatibleEndpoint(settings, prompt);
+  requestCache.set(cacheKey, result);
+  return result;
 }
 
-async function callGemini(apiKey, model, prompt, grounding) {
+async function callGemini(apiKey, model, prompt, grounding, options = {}) {
+  const tuning = getTuning(options.mode, options.project);
+  const retries = options.project?.autoRetry === false ? 0 : tuning.retries;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-  const payload = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: 0.85,
-      topP: 0.95,
-      maxOutputTokens: 8192,
-    },
+
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), tuning.timeoutMs);
+
+    try {
+      const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: tuning.temperature,
+          topP: tuning.topP,
+          maxOutputTokens: tuning.maxOutputTokens,
+        },
+      };
+
+      if (grounding) {
+        payload.tools = [{ google_search: {} }];
+      }
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      if (!response.ok) {
+        const rawText = await response.text();
+        const retryable = [429, 500, 503, 504].includes(response.status);
+
+        if (retryable && attempt < retries) {
+          showProgress(`混雑中のため再試行 ${attempt + 1}/${retries}`, 24 + (attempt * 8));
+          await sleep(getRetryDelay(attempt));
+          continue;
+        }
+
+        if (grounding && response.status === 503 && options.mode === "research") {
+          showProgress(options.retryLabel || "混雑のため軽量リサーチへ切替", 28);
+          return callGemini(apiKey, model, prompt, false, {
+            ...options,
+            retryLabel: null,
+          });
+        }
+
+        throw new Error(normalizeGeminiError(response.status, rawText, options.mode));
+      }
+
+      const data = await response.json();
+      const parts = data?.candidates?.[0]?.content?.parts || [];
+      const text = parts.map((part) => part.text || "").join("\n").trim();
+      if (!text) throw new Error("Geminiの応答が空でした。少し待ってから再試行してください。");
+
+      const sources = grounding ? extractGeminiSources(data) : "";
+      return sources ? `${text}\n\n---\n参照候補\n${sources}` : text;
+    } catch (error) {
+      clearTimeout(timer);
+      lastError = error;
+      const isAbort = error?.name === "AbortError";
+      const isNetwork = error instanceof TypeError;
+      const retryable = isAbort || isNetwork;
+
+      if (retryable && attempt < retries) {
+        showProgress(`応答待機中のため再試行 ${attempt + 1}/${retries}`, 24 + (attempt * 8));
+        await sleep(getRetryDelay(attempt));
+        continue;
+      }
+
+      if (isAbort) {
+        throw new Error("応答が長すぎたため中断しました。文字数を下げるか、安定優先モードをONにしてください。");
+      }
+      if (isNetwork) {
+        throw new Error("通信が不安定です。接続を確認してから再試行してください。");
+      }
+      throw error;
+    }
+  }
+
+  throw lastError || new Error("Gemini応答で不明なエラーが発生しました");
+}
+
+function getTuning(mode, project = {}) {
+  const stable = project.performanceMode !== false;
+  const table = {
+    research: stable
+      ? { temperature: 0.45, topP: 0.88, maxOutputTokens: 1600, timeoutMs: 22000, retries: 2 }
+      : { temperature: 0.62, topP: 0.92, maxOutputTokens: 2400, timeoutMs: 30000, retries: 2 },
+    outline: stable
+      ? { temperature: 0.5, topP: 0.9, maxOutputTokens: 1900, timeoutMs: 22000, retries: 2 }
+      : { temperature: 0.68, topP: 0.94, maxOutputTokens: 2800, timeoutMs: 32000, retries: 2 },
+    hooks: stable
+      ? { temperature: 0.58, topP: 0.9, maxOutputTokens: 1700, timeoutMs: 22000, retries: 2 }
+      : { temperature: 0.78, topP: 0.95, maxOutputTokens: 2400, timeoutMs: 32000, retries: 2 },
+    article: stable
+      ? { temperature: 0.72, topP: 0.9, maxOutputTokens: 2600, timeoutMs: 28000, retries: 2 }
+      : { temperature: 0.82, topP: 0.94, maxOutputTokens: 3400, timeoutMs: 38000, retries: 2 },
   };
-
-  if (grounding) {
-    payload.tools = [{ google_search: {} }];
-  }
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Geminiエラー: ${response.status} ${text}`);
-  }
-
-  const data = await response.json();
-  const parts = data?.candidates?.[0]?.content?.parts || [];
-  const text = parts.map((part) => part.text || "").join("\n").trim();
-  if (!text) throw new Error("Geminiの応答が空でした");
-
-  const sources = extractGeminiSources(data);
-  return sources ? `${text}\n\n---\n参照候補\n${sources}` : text;
+  return table[mode || "article"];
 }
 
-function extractGeminiSources(data) {
-  const chunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks;
-  if (!Array.isArray(chunks) || !chunks.length) return "";
-  const seen = new Set();
-  const rows = [];
-  chunks.forEach((chunk) => {
-    const web = chunk?.web;
-    if (!web?.uri || seen.has(web.uri)) return;
-    seen.add(web.uri);
-    rows.push(`- ${web.title || web.uri}\n  ${web.uri}`);
-  });
-  return rows.slice(0, 8).join("\n");
+function getChunkCount(totalLength, stable = true) {
+  if (totalLength <= 6000) return 1;
+  if (totalLength <= 14000) return 2;
+  if (totalLength <= 26000) return stable ? 3 : 2;
+  return 4;
 }
 
-async function callCompatibleEndpoint(settings, prompt) {
+function buildRequestCacheKey(settings, prompt, grounding, mode) {
+  return [settings.provider, settings.geminiModel || settings.compatModel || "", grounding ? "g" : "n", mode || "generic", simpleHash(prompt)].join("::");
+}
+
+function simpleHash(value) {
+  let hash = 0;
+  const input = String(value || "");
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash << 5) - hash) + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return String(hash);
+}
+
+function getRetryDelay(attempt) {
+  return Math.min(5000, 1200 * (attempt + 1));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeGeminiError(status, rawText, mode) {
+  const text = String(rawText || "");
+  if (status === 429) return "短時間のリクエストが多いため一時的に制限されています。30〜60秒ほど空けて再試行してください。";
+  if (status === 503) return mode === "research"
+    ? "Gemini側が混雑しています。少し待ってから再試行してください。最新Web参照はOFFの方が安定します。"
+    : "Gemini側が混雑しています。少し待ってから再試行してください。";
+  if (status === 400) return text.includes("API key") ? "APIキーの形式を確認してください。" : "送信内容が重すぎるか不正です。文字数や入力内容を少し軽くしてください。";
+  if (status === 403) return "APIキーの権限または利用設定を確認してください。";
+  if (status >= 500) return "Gemini側の一時エラーです。時間を空けて再試行してください。";
+  return `Geminiでエラーが発生しました（${status}）。`;
+}
+
+async function callCompatibleEndpoint(settings, prompt, options = {}) {
+  const tuning = getTuning(options.mode, options.project);
   const response = await fetch(settings.compatEndpoint, {
     method: "POST",
     headers: {
@@ -606,7 +753,8 @@ async function callCompatibleEndpoint(settings, prompt) {
           content: prompt,
         },
       ],
-      temperature: 0.85,
+      temperature: tuning.temperature,
+      max_tokens: tuning.maxOutputTokens,
     }),
   });
 
@@ -619,6 +767,21 @@ async function callCompatibleEndpoint(settings, prompt) {
   const text = data?.choices?.[0]?.message?.content?.trim();
   if (!text) throw new Error("互換APIの応答が空でした");
   return text;
+}
+
+function setBusy(isBusy) {
+  state.isGenerating = isBusy;
+  [
+    els.runResearchBtn,
+    els.buildOutlineBtn,
+    els.generateHooksBtn,
+    els.generateArticleBtn,
+    els.saveProjectBtn,
+    els.duplicateProjectBtn,
+    els.deleteProjectBtn,
+  ].forEach((button) => {
+    if (button) button.disabled = isBusy;
+  });
 }
 
 function prepareProjectOrWarn() {
@@ -722,7 +885,8 @@ function showToast(message, isError = false) {
   els.toast.textContent = message;
   els.toast.classList.remove("hidden");
   els.toast.style.borderColor = isError ? "rgba(255,127,157,0.35)" : "rgba(127,209,255,0.25)";
-  setTimeout(() => els.toast.classList.add("hidden"), 2200);
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => els.toast.classList.add("hidden"), isError ? 4200 : 2200);
 }
 
 function formatDate(isoString) {
