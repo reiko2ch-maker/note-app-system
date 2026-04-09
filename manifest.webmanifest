@@ -1,0 +1,9 @@
+{
+  "name": "Note Forge X",
+  "short_name": "NoteForgeX",
+  "display": "standalone",
+  "start_url": ".",
+  "background_color": "#040b14",
+  "theme_color": "#07111f",
+  "icons": []
+}

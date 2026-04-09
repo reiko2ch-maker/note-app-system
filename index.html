@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#07111f" />
+    <title>Note Forge X</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <div id="loginView" class="view view-login">
+        <div class="login-grid">
+          <section class="hero-panel glass-panel">
+            <div class="eyebrow">STATIC • GITHUB PAGES • MOBILE FIRST</div>
+            <h1>Note Forge X</h1>
+            <p class="hero-copy">
+              リサーチ、構成設計、長文生成、履歴保存を1つにまとめた
+              note執筆OS。DB不要、環境変数不要、GitHubに上げるだけで動く静的Webアプリ版。
+            </p>
+            <div class="hero-points">
+              <div>
+                <span>方式B</span>
+                APIキーはセッション保存のみ
+              </div>
+              <div>
+                <span>履歴</span>
+                端末内ブラウザ保存
+              </div>
+              <div>
+                <span>配布</span>
+                GitHub Pages向け
+              </div>
+            </div>
+          </section>
+
+          <section class="login-panel glass-panel">
+            <div class="panel-header">
+              <h2>ワークスペース起動</h2>
+              <p>8桁の数字で識別します。これは認証というより、執筆資産の識別キーです。</p>
+            </div>
+
+            <form id="loginForm" class="stack-lg">
+              <label class="field">
+                <span>8桁パスコード</span>
+                <input
+                  id="passcodeInput"
+                  type="password"
+                  inputmode="numeric"
+                  pattern="[0-9]{8}"
+                  maxlength="8"
+                  placeholder="例: 28190417"
+                  autocomplete="off"
+                  required
+                />
+              </label>
+
+              <div class="inline-actions">
+                <button type="button" class="ghost-btn" id="togglePasscodeBtn">表示</button>
+                <button type="button" class="ghost-btn" id="generatePasscodeBtn">自動生成</button>
+              </div>
+
+              <button class="primary-btn" type="submit">ワークスペースへ入る</button>
+            </form>
+
+            <div class="note-box">
+              <strong>重要</strong>
+              <p>
+                APIキーは保存しません。履歴はこの端末・このブラウザにだけ残ります。Safariの履歴削除やブラウザデータ削除をすると消えます。
+              </p>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div id="workspaceView" class="view hidden">
+        <header class="topbar glass-panel">
+          <div>
+            <div class="eyebrow">NOTE RESEARCH & WRITING OS</div>
+            <h1>Note Forge X</h1>
+            <p id="workspaceMeta" class="muted"></p>
+          </div>
+          <div class="topbar-actions">
+            <button class="ghost-btn" id="openApiPanelBtn">API設定</button>
+            <button class="ghost-btn" id="exportDataBtn">JSON書き出し</button>
+            <button class="ghost-btn" id="logoutBtn">切り替え</button>
+          </div>
+        </header>
+
+        <main class="workspace-grid">
+          <section class="left-column stack-xl">
+            <article class="glass-panel stack-lg">
+              <div class="section-head">
+                <div>
+                  <div class="eyebrow">PROJECT BLUEPRINT</div>
+                  <h2>記事設計</h2>
+                </div>
+                <button class="ghost-btn" id="newProjectBtn">新規</button>
+              </div>
+
+              <form id="projectForm" class="stack-md">
+                <div class="grid-2">
+                  <label class="field">
+                    <span>案件名</span>
+                    <input id="projectTitle" type="text" placeholder="例: 婚活LINE実録note" required />
+                  </label>
+                  <label class="field">
+                    <span>ジャンル</span>
+                    <select id="genre">
+                      <option>副業・マネタイズ</option>
+                      <option>恋愛・婚活</option>
+                      <option>体験談・ストーリー</option>
+                      <option>AI活用・自動化</option>
+                      <option>ビジネス・営業</option>
+                      <option>自己啓発・学び</option>
+                      <option>オリジナル</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label class="field">
+                  <span>主題・テーマ</span>
+                  <textarea id="theme" rows="3" placeholder="何について書くnoteか。何を売りたいか。どんな体験や知見があるか。" required></textarea>
+                </label>
+
+                <div class="grid-2">
+                  <label class="field">
+                    <span>読者像</span>
+                    <input id="targetReader" type="text" placeholder="例: マッチングアプリで疲弊した30代女性" />
+                  </label>
+                  <label class="field">
+                    <span>最終ゴール</span>
+                    <input id="goal" type="text" placeholder="例: note購入 / LINE登録 / ココナラ相談" />
+                  </label>
+                </div>
+
+                <div class="grid-3">
+                  <label class="field">
+                    <span>文量</span>
+                    <select id="targetLength">
+                      <option value="10000">1万文字</option>
+                      <option value="15000">1.5万文字</option>
+                      <option value="20000">2万文字</option>
+                      <option value="30000">3万文字</option>
+                      <option value="40000">4万文字</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>トーン</span>
+                    <select id="tone">
+                      <option>AI感を徹底排除した自然文</option>
+                      <option>共感強め</option>
+                      <option>権威性強め</option>
+                      <option>ストーリー没入型</option>
+                      <option>静かな分析型</option>
+                      <option>売り込み控えめ</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>構成フレーム</span>
+                    <select id="framework">
+                      <option>PASONA + ストーリー</option>
+                      <option>結論→理由→具体→注意→行動</option>
+                      <option>体験談→分析→再現手順</option>
+                      <option>教育→共感→販売導線</option>
+                      <option>炎上/失敗→学び→回収</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label class="field">
+                  <span>差別化要素・独自情報</span>
+                  <textarea id="uniqueness" rows="3" placeholder="実体験、実績、具体データ、独自視点、NG表現、絶対に入れたい要素など"></textarea>
+                </label>
+
+                <label class="field">
+                  <span>参考メモ / 競合タイトル / URL</span>
+                  <textarea id="researchSeed" rows="5" placeholder="競合タイトルやURL、読者の悩み、キーワード候補、参考にしたいnote構成などを貼る"></textarea>
+                </label>
+
+                <div class="toggle-grid">
+                  <label class="pill-check"><input type="checkbox" value="緊急性" class="psychTrigger" checked />緊急性</label>
+                  <label class="pill-check"><input type="checkbox" value="損失回避" class="psychTrigger" checked />損失回避</label>
+                  <label class="pill-check"><input type="checkbox" value="共感" class="psychTrigger" checked />共感</label>
+                  <label class="pill-check"><input type="checkbox" value="権威性" class="psychTrigger" />権威性</label>
+                  <label class="pill-check"><input type="checkbox" value="再現性" class="psychTrigger" checked />再現性</label>
+                  <label class="pill-check"><input type="checkbox" value="保存価値" class="psychTrigger" />保存価値</label>
+                  <label class="pill-check"><input type="checkbox" value="物語没入" class="psychTrigger" />物語没入</label>
+                  <label class="pill-check"><input type="checkbox" value="購入不安の除去" class="psychTrigger" checked />購入不安の除去</label>
+                </div>
+
+                <div class="inline-actions wrap">
+                  <button type="button" class="secondary-btn" id="saveProjectBtn">履歴に保存</button>
+                  <button type="button" class="ghost-btn" id="duplicateProjectBtn">複製</button>
+                  <button type="button" class="ghost-btn" id="deleteProjectBtn">削除</button>
+                </div>
+              </form>
+            </article>
+
+            <article class="glass-panel stack-lg">
+              <div class="section-head">
+                <div>
+                  <div class="eyebrow">ASSET VAULT</div>
+                  <h2>保存済み履歴</h2>
+                </div>
+                <div class="muted small" id="historyCount">0件</div>
+              </div>
+              <div id="historyList" class="history-list"></div>
+            </article>
+          </section>
+
+          <section class="right-column stack-xl">
+            <article class="glass-panel stack-lg">
+              <div class="section-head">
+                <div>
+                  <div class="eyebrow">RESEARCH ENGINE</div>
+                  <h2>リサーチと設計生成</h2>
+                </div>
+                <div class="status-dot" id="providerStatus">未接続</div>
+              </div>
+
+              <div class="action-grid">
+                <button class="primary-btn" id="runResearchBtn">売れ筋リサーチ実行</button>
+                <button class="secondary-btn" id="buildOutlineBtn">構成・見出し生成</button>
+                <button class="secondary-btn" id="generateHooksBtn">タイトル・導入・CTA生成</button>
+                <button class="primary-btn" id="generateArticleBtn">全文生成</button>
+              </div>
+
+              <div class="progress-box hidden" id="progressBox">
+                <div class="progress-label" id="progressLabel">待機中</div>
+                <div class="progress-bar"><span id="progressFill"></span></div>
+              </div>
+            </article>
+
+            <article class="glass-panel stack-lg">
+              <div class="section-head">
+                <div>
+                  <div class="eyebrow">OUTPUT</div>
+                  <h2>生成結果</h2>
+                </div>
+                <div class="inline-actions wrap">
+                  <button class="ghost-btn" id="copyOutputBtn">コピー</button>
+                  <button class="ghost-btn" id="exportMarkdownBtn">Markdown</button>
+                  <button class="ghost-btn" id="exportHtmlBtn">HTML</button>
+                </div>
+              </div>
+
+              <div class="tabs" role="tablist">
+                <button class="tab-btn active" data-tab="research">Research</button>
+                <button class="tab-btn" data-tab="outline">Outline</button>
+                <button class="tab-btn" data-tab="hooks">Hooks</button>
+                <button class="tab-btn" data-tab="article">Article</button>
+              </div>
+
+              <div class="tab-panels">
+                <section class="tab-panel active" data-panel="research">
+                  <textarea id="researchOutput" class="output-area" placeholder="リサーチ結果がここに表示されます"></textarea>
+                </section>
+                <section class="tab-panel" data-panel="outline">
+                  <textarea id="outlineOutput" class="output-area" placeholder="構成がここに表示されます"></textarea>
+                </section>
+                <section class="tab-panel" data-panel="hooks">
+                  <textarea id="hooksOutput" class="output-area" placeholder="タイトル案・導入・CTAがここに表示されます"></textarea>
+                </section>
+                <section class="tab-panel" data-panel="article">
+                  <textarea id="articleOutput" class="output-area large" placeholder="全文がここに表示されます"></textarea>
+                </section>
+              </div>
+            </article>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <dialog id="apiDialog" class="api-dialog glass-panel">
+      <form method="dialog" class="stack-lg">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">SESSION ONLY</div>
+            <h2>API設定</h2>
+          </div>
+          <button class="ghost-btn" value="cancel">閉じる</button>
+        </div>
+
+        <label class="field">
+          <span>プロバイダ</span>
+          <select id="providerSelect">
+            <option value="gemini">Gemini Direct（推奨）</option>
+            <option value="openai-compatible">OpenAI互換エンドポイント（上級者向け）</option>
+          </select>
+        </label>
+
+        <div id="geminiFields" class="stack-md">
+          <label class="field">
+            <span>Gemini APIキー</span>
+            <input id="geminiApiKey" type="password" placeholder="AIza..." autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Geminiモデル</span>
+            <input id="geminiModel" type="text" value="gemini-2.5-flash" />
+          </label>
+          <p class="small muted">
+            GitHub Pagesだけで動かすなら、これが最も相性が良い構成です。
+          </p>
+        </div>
+
+        <div id="openaiFields" class="stack-md hidden">
+          <label class="field">
+            <span>互換エンドポイントURL</span>
+            <input id="compatEndpoint" type="url" placeholder="https://your-endpoint.example/v1/chat/completions" />
+          </label>
+          <label class="field">
+            <span>APIキー</span>
+            <input id="compatApiKey" type="password" placeholder="sk-..." autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>モデル名</span>
+            <input id="compatModel" type="text" value="gpt-4.1-mini" />
+          </label>
+          <p class="small muted">
+            公式OpenAIキーをブラウザに直接入れて公開運用するのは推奨しません。CORS対応した自前プロキシや互換サービス向けの上級者モードです。
+          </p>
+        </div>
+
+        <div class="note-box warn-box">
+          <strong>保存方式</strong>
+          <p>APIキーは sessionStorage にのみ保持します。タブやブラウザを閉じると消えます。</p>
+        </div>
+
+        <div class="inline-actions wrap">
+          <button type="button" class="secondary-btn" id="saveApiSettingsBtn">このタブにだけ保持</button>
+          <button type="button" class="ghost-btn" id="clearApiSettingsBtn">クリア</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
