@@ -1,6 +1,6 @@
 const STORAGE_PREFIX = "noteforgex::vault::";
 const SESSION_PROVIDER_KEY = "noteforgex::providerSettings";
-const APP_VERSION = "static-1.2.0-continuation";
+const APP_VERSION = "static-1.3.0-research-fix-prompt-export";
 const requestCache = new Map();
 
 const state = {
@@ -48,6 +48,7 @@ const els = {
   outlineOutput: document.getElementById("outlineOutput"),
   hooksOutput: document.getElementById("hooksOutput"),
   articleOutput: document.getElementById("articleOutput"),
+  promptOutput: document.getElementById("promptOutput"),
   progressBox: document.getElementById("progressBox"),
   progressLabel: document.getElementById("progressLabel"),
   progressFill: document.getElementById("progressFill"),
@@ -55,6 +56,8 @@ const els = {
   copyOutputBtn: document.getElementById("copyOutputBtn"),
   exportMarkdownBtn: document.getElementById("exportMarkdownBtn"),
   exportHtmlBtn: document.getElementById("exportHtmlBtn"),
+  generateClaudePromptBtn: document.getElementById("generateClaudePromptBtn"),
+  generateGptPromptBtn: document.getElementById("generateGptPromptBtn"),
   exportDataBtn: document.getElementById("exportDataBtn"),
   logoutBtn: document.getElementById("logoutBtn"),
   toast: document.getElementById("toast"),
@@ -112,6 +115,8 @@ function bindEvents() {
   els.copyOutputBtn.addEventListener("click", copyActiveOutput);
   els.exportMarkdownBtn.addEventListener("click", () => exportText("md"));
   els.exportHtmlBtn.addEventListener("click", () => exportText("html"));
+  els.generateClaudePromptBtn.addEventListener("click", () => generateExternalWritingPrompt("claude"));
+  els.generateGptPromptBtn.addEventListener("click", () => generateExternalWritingPrompt("gpt54"));
   els.exportDataBtn.addEventListener("click", exportVaultJson);
   els.logoutBtn.addEventListener("click", logout);
 
@@ -330,6 +335,7 @@ function clearProjectForm() {
   els.outlineOutput.value = "";
   els.hooksOutput.value = "";
   els.articleOutput.value = "";
+  els.promptOutput.value = "";
 }
 
 function collectProjectFromForm() {
@@ -449,6 +455,7 @@ async function runResearch() {
     mode: "research",
     project,
     retryLabel: project.webGrounding ? "混雑時は軽量リサーチへ自動切替" : "軽量リサーチを実行中",
+    ensureComplete: true,
   });
   if (!result) return;
   els.researchOutput.value = result;
@@ -467,6 +474,7 @@ async function buildOutline() {
     grounding: false,
     mode: "outline",
     project,
+    ensureComplete: true,
   });
   if (!result) return;
   els.outlineOutput.value = result;
@@ -485,6 +493,7 @@ async function generateHooks() {
     grounding: false,
     mode: "hooks",
     project,
+    ensureComplete: true,
   });
   if (!result) return;
   els.hooksOutput.value = result;
@@ -520,7 +529,14 @@ async function generateArticle() {
         previousSections: sections.join("\n\n"),
       });
 
-      const result = await callProvider(prompt, false, { mode: "article", project });
+      const result = await generateArticleChunkWithContinuation({
+        basePrompt: prompt,
+        project,
+        chunkIndex: index,
+        chunks,
+        chunkTarget,
+        previousSections: sections,
+      });
       sections.push(result);
       els.articleOutput.value = sections.join("\n\n");
       if (index < chunks - 1) await sleep(project.performanceMode ? 650 : 250);
@@ -541,7 +557,7 @@ async function generateArticle() {
 }
 
 
-async function generateArticleChunkWithContinuation({ basePrompt, project, chunkIndex, chunks, chunkTarget }) {
+async function generateArticleChunkWithContinuation({ basePrompt, project, chunkIndex, chunks, chunkTarget, previousSections = [] }) {
   let combined = await callProvider(basePrompt, false, { mode: "article", project, cacheBypass: true });
   const maxContinuations = project.performanceMode !== false ? 2 : 3;
 
@@ -640,7 +656,7 @@ function mergeSectionsPreview(sectionText, chunkIndex) {
   return parts.join("\n\n");
 }
 
-async function guardedGeneration({ stage, progress, prompt, grounding, mode, project, retryLabel }) {
+async function guardedGeneration({ stage, progress, prompt, grounding, mode, project, retryLabel, ensureComplete = false }) {
   if (state.isGenerating) {
     showToast("別の生成処理が進行中です。完了後に再実行してください", true);
     return null;
@@ -649,7 +665,9 @@ async function guardedGeneration({ stage, progress, prompt, grounding, mode, pro
   setBusy(true);
   try {
     showProgress(stage, progress);
-    const result = await callProvider(prompt, grounding, { mode, project, retryLabel });
+    const result = ensureComplete
+      ? await generateStructuredOutputWithContinuation({ prompt, grounding, mode, project, retryLabel })
+      : await callProvider(prompt, grounding, { mode, project, retryLabel });
     finishProgress(`${stage} 完了`);
     return result;
   } catch (error) {
@@ -869,6 +887,69 @@ async function callCompatibleEndpoint(settings, prompt, options = {}) {
   return text;
 }
 
+
+function generateExternalWritingPrompt(target) {
+  const project = prepareProjectOrWarn();
+  if (!project) return;
+  const prompt = buildExternalWritingPrompt(target, project);
+  els.promptOutput.value = prompt;
+  saveOutputs({ prompt: prompt, promptOutput: prompt });
+  activateTab("prompt");
+  showToast(target === "claude" ? "Claude用プロンプトを生成しました" : "GPT-5.4用プロンプトを生成しました");
+}
+
+function buildExternalWritingPrompt(target, project) {
+  const platformLabel = target === "claude" ? "Claude" : "GPT-5.4";
+  const styleHint = target === "claude"
+    ? "長文の一貫性、自然な日本語、章ごとの温度差、説明の厚みを重視してください。"
+    : "構造の明確さ、論理のつながり、冗長表現の削減、精度の高い再構成を重視してください。";
+  return `
+あなたは、日本のnote販売に強いトップクラスの編集者・リサーチャー・セールスライターです。
+これから${platformLabel}に、売れる長文note本文の執筆を依頼します。
+
+# 最終目的
+${project.goal || "note販売"}
+
+# 案件情報
+- 案件名: ${project.title}
+- ジャンル: ${project.genre}
+- テーマ: ${project.theme}
+- 読者像: ${project.targetReader || "未設定"}
+- 目標文量: ${project.targetLength}文字
+- トーン: ${project.tone}
+- 構成フレーム: ${project.framework}
+- 差別化要素: ${project.uniqueness || "未設定"}
+- 心理トリガー: ${project.psychTriggers.join("、") || "未設定"}
+
+# 参考リサーチ
+${els.researchOutput.value || "未設定"}
+
+# 構成案
+${els.outlineOutput.value || "未設定"}
+
+# タイトル・導入・CTA案
+${els.hooksOutput.value || "未設定"}
+
+# 執筆要件
+- 日本語は自然で、人間が書いたような温度感にする
+- AI特有の前置き、説明口調、無機質な定型句を避ける
+- 売り込み臭を強くしすぎず、でも購入価値は伝える
+- 無料パートから有料パートへ自然につなぐ
+- 章見出しを適切に入れる
+- 実体験がない要素は断定で盛らない
+- 読者が保存・購入したくなる実用性を担保する
+- 最後は途中で切らず、自然な文末まで出力する
+- ${styleHint}
+
+# 出力形式
+1. 完成タイトル1本
+2. 冒頭導入
+3. 本文全文
+4. 最後に自然なCTA
+
+必要に応じて構成を微調整して構いませんが、テーマと読者像からズラさないでください。
+`.trim();
+}
 function setBusy(isBusy) {
   state.isGenerating = isBusy;
   [
@@ -959,7 +1040,7 @@ function buildMarkdownExport(project) {
 }
 
 function buildHtmlExport(project) {
-  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${escapeHtml(project.title || "無題")}</title><style>body{font-family:Inter,system-ui,sans-serif;margin:32px auto;max-width:900px;line-height:1.8;padding:0 16px;color:#112}h1,h2{line-height:1.25}pre{white-space:pre-wrap;font:inherit}</style></head><body><h1>${escapeHtml(project.title || "無題")}</h1><h2>Research</h2><pre>${escapeHtml(els.researchOutput.value)}</pre><h2>Outline</h2><pre>${escapeHtml(els.outlineOutput.value)}</pre><h2>Hooks</h2><pre>${escapeHtml(els.hooksOutput.value)}</pre><h2>Article</h2><pre>${escapeHtml(els.articleOutput.value)}</pre></body></html>`;
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${escapeHtml(project.title || "無題")}</title><style>body{font-family:Inter,system-ui,sans-serif;margin:32px auto;max-width:900px;line-height:1.8;padding:0 16px;color:#112}h1,h2{line-height:1.25}pre{white-space:pre-wrap;font:inherit}</style></head><body><h1>${escapeHtml(project.title || "無題")}</h1><h2>Research</h2><pre>${escapeHtml(els.researchOutput.value)}</pre><h2>Outline</h2><pre>${escapeHtml(els.outlineOutput.value)}</pre><h2>Hooks</h2><pre>${escapeHtml(els.hooksOutput.value)}</pre><h2>Article</h2><pre>${escapeHtml(els.articleOutput.value)}</pre><h2>Prompt</h2><pre>${escapeHtml(els.promptOutput.value)}</pre></body></html>`;
 }
 
 function exportVaultJson() {

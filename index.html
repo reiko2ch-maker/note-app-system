@@ -241,6 +241,8 @@
                   <button class="ghost-btn" id="copyOutputBtn">コピー</button>
                   <button class="ghost-btn" id="exportMarkdownBtn">Markdown</button>
                   <button class="ghost-btn" id="exportHtmlBtn">HTML</button>
+                  <button class="ghost-btn" id="generateClaudePromptBtn">Claude用プロンプト</button>
+                  <button class="ghost-btn" id="generateGptPromptBtn">GPT-5.4用プロンプト</button>
                 </div>
               </div>
 
@@ -249,6 +251,7 @@
                 <button class="tab-btn" data-tab="outline">構成</button>
                 <button class="tab-btn" data-tab="hooks">導入・CTA</button>
                 <button class="tab-btn" data-tab="article">本文</button>
+                <button class="tab-btn" data-tab="prompt">プロンプト</button>
               </div>
 
               <div class="tab-panels">
@@ -263,6 +266,9 @@
                 </section>
                 <section class="tab-panel" data-panel="article">
                   <textarea id="articleOutput" class="output-area large" placeholder="全文がここに表示されます"></textarea>
+                </section>
+                <section class="tab-panel" data-panel="prompt">
+                  <textarea id="promptOutput" class="output-area large" placeholder="Claude / GPT-5.4向けの文章生成プロンプトがここに表示されます"></textarea>
                 </section>
               </div>
             </article>

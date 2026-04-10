@@ -321,3 +321,6 @@ textarea { resize: vertical; min-height: 92px; }
 .compact-note{margin-top:-4px;}
 button:disabled{opacity:.58;cursor:not-allowed;filter:saturate(.7);}
 @media (max-width: 900px){.tool-grid{grid-template-columns:1fr;}}
+
+
+.output-area.large{min-height:460px;}
