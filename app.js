@@ -1,6 +1,6 @@
 const STORAGE_PREFIX = "noteforgex::vault::";
 const SESSION_PROVIDER_KEY = "noteforgex::providerSettings";
-const APP_VERSION = "static-1.1.0-light";
+const APP_VERSION = "static-1.2.0-continuation";
 const requestCache = new Map();
 
 const state = {
@@ -540,6 +540,106 @@ async function generateArticle() {
   }
 }
 
+
+async function generateArticleChunkWithContinuation({ basePrompt, project, chunkIndex, chunks, chunkTarget }) {
+  let combined = await callProvider(basePrompt, false, { mode: "article", project, cacheBypass: true });
+  const maxContinuations = project.performanceMode !== false ? 2 : 3;
+
+  for (let pass = 0; pass < maxContinuations; pass += 1) {
+    if (!needsContinuation(combined, chunkTarget)) break;
+    const nextPercent = Math.min(90, 30 + Math.round(((chunkIndex + 1) / chunks) * 50) + (pass * 4));
+    showProgress(`${chunkIndex + 1}/${chunks} セクション補完中`, nextPercent);
+    const continuationPrompt = buildArticleContinuationPrompt({
+      project,
+      chunkIndex,
+      chunks,
+      chunkTarget,
+      currentText: combined,
+    });
+    const addition = await callProvider(continuationPrompt, false, { mode: "article", project, cacheBypass: true });
+    combined = mergeWithoutOverlap(combined, addition);
+    els.articleOutput.value = mergeSectionsPreview(combined, chunkIndex);
+    await sleep(project.performanceMode ? 450 : 250);
+  }
+
+  return finalizeArticleChunk(combined);
+}
+
+function buildPreviousContext(sections) {
+  const joined = sections.join("\n\n");
+  if (!joined) return "まだなし";
+  return joined.slice(-2400);
+}
+
+function buildArticleContinuationPrompt({ project, chunkIndex, chunks, chunkTarget, currentText }) {
+  const tail = currentText.slice(-1200);
+  return `
+あなたは、日本語の長文noteを売れる品質で仕上げるプロ編集者兼ライターです。
+
+現在、全${chunks}分割中の第${chunkIndex + 1}パートを執筆中です。
+目安文字数は約${chunkTarget}文字です。
+以下の本文は途中まで書けています。重複せず、この続きだけを書いてください。
+
+案件情報:
+- テーマ: ${project.theme}
+- ジャンル: ${project.genre}
+- 読者像: ${project.targetReader || "未設定"}
+- ゴール: ${project.goal || "note販売"}
+- トーン: ${project.tone}
+- フレーム: ${project.framework}
+
+すでに生成済みのこのパート末尾:
+${tail}
+
+指示:
+- 直前の一文を繰り返さず、その自然な続きから始める
+- メタ説明や補足文は不要
+- このパートを読みやすい区切りまで書き進める
+- 必ず文の途中で終わらず、最後は自然な文末で止める
+- 末尾に「続く」「以上」などの注記は入れない
+`.trim();
+}
+
+function needsContinuation(text, chunkTarget) {
+  const normalized = String(text || "").trim();
+  if (!normalized) return true;
+  const hasEnoughVolume = normalized.length >= Math.max(1200, Math.round(chunkTarget * 0.58));
+  const endsCleanly = /[。！？』」）】]$/.test(normalized);
+  const lastLine = normalized.split(/\n+/).pop() || "";
+  const endsHalfway = /[、,\-ー〜:：;；(（「『]$/.test(normalized) || /[ぁ-んァ-ヶー一-龠A-Za-z0-9]{1,8}$/.test(lastLine);
+  if (!hasEnoughVolume) return true;
+  if (!endsCleanly) return true;
+  if (endsHalfway) return true;
+  return false;
+}
+
+function mergeWithoutOverlap(baseText, additionText) {
+  const base = String(baseText || "").trimEnd();
+  const addition = String(additionText || "").trim();
+  if (!addition) return base;
+  const maxOverlap = Math.min(220, base.length, addition.length);
+  for (let len = maxOverlap; len >= 20; len -= 1) {
+    const suffix = base.slice(-len);
+    const prefix = addition.slice(0, len);
+    if (suffix === prefix) return `${base}${addition.slice(len)}`;
+  }
+  return `${base}\n\n${addition}`;
+}
+
+function finalizeArticleChunk(text) {
+  const normalized = String(text || "").trim();
+  return normalized.replace(/(?:\n\s*){3,}/g, "\n\n");
+}
+
+function mergeSectionsPreview(sectionText, chunkIndex) {
+  const current = els.articleOutput.value.trim();
+  if (!current) return sectionText;
+  const parts = current.split(/\n\n(?=## )/);
+  if (parts.length <= chunkIndex) return `${current}\n\n${sectionText}`;
+  parts[chunkIndex] = sectionText;
+  return parts.join("\n\n");
+}
+
 async function guardedGeneration({ stage, progress, prompt, grounding, mode, project, retryLabel }) {
   if (state.isGenerating) {
     showToast("別の生成処理が進行中です。完了後に再実行してください", true);
@@ -565,7 +665,7 @@ async function guardedGeneration({ stage, progress, prompt, grounding, mode, pro
 async function callProvider(prompt, grounding = false, options = {}) {
   const settings = state.providerSettings;
   const cacheKey = buildRequestCacheKey(settings, prompt, grounding, options.mode);
-  if (requestCache.has(cacheKey)) return requestCache.get(cacheKey);
+  if (!options.cacheBypass && requestCache.has(cacheKey)) return requestCache.get(cacheKey);
 
   let result;
   if (settings.provider === "gemini") {
@@ -580,7 +680,7 @@ async function callProvider(prompt, grounding = false, options = {}) {
     result = await callCompatibleEndpoint(settings, prompt, options);
   }
 
-  requestCache.set(cacheKey, result);
+  if (!options.cacheBypass) requestCache.set(cacheKey, result);
   return result;
 }
 
@@ -1063,5 +1163,6 @@ ${previousSections || "まだなし"}
 - メタ説明は不要
 - 文字数は十分に出す
 - 中身のない冗長さではなく、読ませる密度を優先
+- 最後は必ず文の途中で切らず、自然な文末または小見出しの終わりで止める
 `.trim();
 }
